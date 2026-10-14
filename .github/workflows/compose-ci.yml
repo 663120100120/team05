@@ -1,0 +1,42 @@
+name: CanteenGo Compose CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compose-smoke-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Start services
+        run: docker compose -f compose.split.yml up -d --build --wait --wait-timeout 180
+
+      - name: Show service status
+        run: docker compose -f compose.split.yml ps
+
+      - name: Test menu API through gateway
+        run: curl --fail --silent --show-error --retry 10 --retry-connrefused --retry-delay 2 http://localhost:8080/api/menu -o /dev/null
+
+      - name: Test order API through gateway
+        run: |
+          curl --fail --silent --show-error --retry 10 --retry-connrefused --retry-delay 2 \
+            -H "Content-Type: application/json" \
+            -d '{"customer_name":"github-actions","items":[{"menu_id":1,"qty":1}]}' \
+            http://localhost:8080/api/orders
+
+      - name: Show logs on failure
+        if: failure()
+        run: docker compose -f compose.split.yml logs
+
+      - name: Stop services
+        if: always()
+        run: docker compose -f compose.split.yml down -v
